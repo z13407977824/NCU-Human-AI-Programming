@@ -456,6 +456,8 @@
     btnToggle.textContent = '暂停';
   }
   btnReset.addEventListener('click', resetSwing);
+  // 兼容行内调用：若按钮被写成 onclick="resetAnimation()"，也能命中同一复位逻辑
+  window.resetAnimation = resetSwing;
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Space') { e.preventDefault(); btnToggle.click(); }
     if (e.key === 'r' || e.key === 'R') resetSwing();
