@@ -48,7 +48,7 @@
   }
   .ctrl { display: flex; align-items: center; gap: 8px; }
   .ctrl label { color: #6f7b93; white-space: nowrap; }
-  .ctrl output { color: #7ef9ff; min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+  .ctrl output { color: #7ef9ff; min-width: 66px; text-align: right; font-variant-numeric: tabular-nums; }
   input[type=range] {
     -webkit-appearance: none; appearance: none;
     width: 108px; height: 3px; border-radius: 3px; outline: none;
@@ -97,33 +97,28 @@
 <div class="panel">
   <div class="ctrl">
     <label for="s-len">摆长 L</label>
-    <input id="s-len" type="range" min="80" max="320" step="1" value="200" />
+    <input id="s-len" type="range" min="100" max="350" step="1" value="200" />
     <output id="o-len">200 px</output>
   </div>
   <div class="ctrl">
     <label for="s-grav">重力 g</label>
-    <input id="s-grav" type="range" min="1" max="20" step="0.1" value="9.8" />
+    <input id="s-grav" type="range" min="1" max="25" step="0.1" value="9.8" />
     <output id="o-grav">9.8</output>
   </div>
   <div class="ctrl">
-    <label for="s-ang">初始摆角</label>
-    <input id="s-ang" type="range" min="5" max="90" step="1" value="45" />
-    <output id="o-ang">45°</output>
-  </div>
-  <div class="ctrl">
     <label for="s-damp">阻尼</label>
-    <input id="s-damp" type="range" min="0" max="0.6" step="0.01" value="0" />
-    <output id="o-damp">0.00</output>
+    <input id="s-damp" type="range" min="0" max="0.010" step="0.001" value="0" />
+    <output id="o-damp">0.000</output>
   </div>
   <div class="btns">
+    <button id="btn-reset">重置摆动</button>
     <button id="btn-toggle">暂停</button>
-    <button id="btn-reset">重置</button>
   </div>
 </div>
 
 <div class="tip">
   θ″ = −(g / L) · sin θ　|　拖拽摆球可手动设定角度<br />
-  空格 = 暂停 / 继续　　R = 重置
+  空格 = 暂停 / 继续　　R = 重置摆动（回到 45°）
 </div>
 
 <script>
@@ -139,12 +134,15 @@
   const FIXED_DT = 1 / 1000;        // 物理定步长（秒），保证积分稳定
   const MAX_FRAME_DT = 0.05;        // 单帧最大补偿时间，防止切后台后爆炸
   const TRAIL_MAX = 90;             // 拖尾采样点数
+  const THETA0 = 45 * Math.PI / 180; // 初始摆角（固定 45°，重置时精准回到该状态）
+  // 阻尼刻度增益：滑杆 0.000~0.010 → 实际衰减系数 0~0.5 /s，保证可见的自然衰减
+  const DAMP_GAIN = 50;
 
   const state = {
     L: 200,            // 摆长（px）
     g: 9.8,            // 重力加速度（m/s²）
-    theta0: 45 * Math.PI / 180,
-    theta: 45 * Math.PI / 180,
+    theta0: THETA0,
+    theta: THETA0,
     omega: 0,
     damping: 0,
     running: true,
@@ -174,9 +172,10 @@
 
   /* ---------------- 物理模型 ---------------- */
   // 简谐（大摆角下的完整非线性）角加速度：θ″ = −(g/L)·sin θ
+  // 阻尼项 −c·ω（c = DAMP_GAIN × 阻尼刻度），滑杆为 0 时严格退化为无阻尼保守系统
   function angularAccel(theta, omega) {
     const gPx = state.g * PPM;                    // px/s²
-    return -(gPx / state.L) * Math.sin(theta) - state.damping * omega;
+    return -(gPx / state.L) * Math.sin(theta) - DAMP_GAIN * state.damping * omega;
   }
 
   // 半隐式欧拉（辛积分）：能量长期漂移小，适合摆动系统
@@ -422,11 +421,9 @@
   /* ---------------- 控件绑定 ---------------- */
   const sLen = document.getElementById('s-len');
   const sGrav = document.getElementById('s-grav');
-  const sAng = document.getElementById('s-ang');
   const sDamp = document.getElementById('s-damp');
   const oLen = document.getElementById('o-len');
   const oGrav = document.getElementById('o-grav');
-  const oAng = document.getElementById('o-ang');
   const oDamp = document.getElementById('o-damp');
   const btnToggle = document.getElementById('btn-toggle');
   const btnReset = document.getElementById('btn-reset');
@@ -440,24 +437,28 @@
     state.g = parseFloat(sGrav.value);
     oGrav.textContent = state.g.toFixed(1);
   });
-  sAng.addEventListener('input', function () {
-    state.theta0 = parseFloat(sAng.value) * Math.PI / 180;
-    oAng.textContent = sAng.value + '°';
-    resetSim();
-  });
   sDamp.addEventListener('input', function () {
     state.damping = parseFloat(sDamp.value);
-    oDamp.textContent = state.damping.toFixed(2);
+    oDamp.textContent = state.damping.toFixed(3);
   });
   btnToggle.addEventListener('click', function () {
     state.running = !state.running;
     btnToggle.textContent = state.running ? '暂停' : '继续';
     accumulator = 0;
   });
-  btnReset.addEventListener('click', resetSim);
+  // 重置摆动：精准回到 45° 静止初始状态，清空拖尾与时间累加器，并恢复运行
+  function resetSwing() {
+    state.L = parseFloat(sLen.value);
+    state.g = parseFloat(sGrav.value);
+    state.theta0 = THETA0;
+    resetSim();
+    state.running = true;
+    btnToggle.textContent = '暂停';
+  }
+  btnReset.addEventListener('click', resetSwing);
   window.addEventListener('keydown', function (e) {
     if (e.code === 'Space') { e.preventDefault(); btnToggle.click(); }
-    if (e.key === 'r' || e.key === 'R') resetSim();
+    if (e.key === 'r' || e.key === 'R') resetSwing();
   });
 
   /* ---------------- 启动 ---------------- */
