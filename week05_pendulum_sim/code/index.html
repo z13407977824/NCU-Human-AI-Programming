@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>单摆简谐振动模拟器 · Week05</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #1a1a24;
+    font-family: "SF Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+    color: #c9d4e5;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+  .hud {
+    position: fixed; top: 18px; left: 20px;
+    padding: 12px 16px;
+    background: rgba(30, 30, 44, 0.62);
+    border: 1px solid rgba(126, 249, 255, 0.16);
+    border-radius: 10px;
+    backdrop-filter: blur(6px);
+    font-size: 12px; line-height: 1.9;
+    letter-spacing: .3px;
+    pointer-events: none;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .45);
+  }
+  .hud h1 {
+    margin: 0 0 6px; font-size: 12px; font-weight: 600;
+    color: #7ef9ff; letter-spacing: 1.2px; text-transform: uppercase;
+  }
+  .hud .row { display: flex; justify-content: space-between; gap: 22px; }
+  .hud .k { color: #6f7b93; }
+  .hud .v { color: #eaf6ff; font-variant-numeric: tabular-nums; }
+
+  .panel {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 18px;
+    padding: 13px 20px;
+    background: rgba(30, 30, 44, 0.72);
+    border: 1px solid rgba(126, 249, 255, 0.16);
+    border-radius: 12px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+    font-size: 12px;
+  }
+  .ctrl { display: flex; align-items: center; gap: 8px; }
+  .ctrl label { color: #6f7b93; white-space: nowrap; }
+  .ctrl output { color: #7ef9ff; min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 108px; height: 3px; border-radius: 3px; outline: none;
+    background: linear-gradient(90deg, #2ea8ff, #7ef9ff);
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #eaf6ff; border: 2px solid #2ea8ff;
+    box-shadow: 0 0 8px rgba(126, 249, 255, .8);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 11px; height: 11px; border: 2px solid #2ea8ff; border-radius: 50%;
+    background: #eaf6ff; box-shadow: 0 0 8px rgba(126, 249, 255, .8);
+  }
+  .btns { display: flex; gap: 8px; margin-left: 4px; }
+  button {
+    font-family: inherit; font-size: 12px; color: #cfe6ff;
+    padding: 6px 13px; border-radius: 8px; cursor: pointer;
+    background: rgba(46, 168, 255, .12);
+    border: 1px solid rgba(126, 249, 255, .28);
+    transition: background .18s, color .18s, box-shadow .18s;
+  }
+  button:hover { background: rgba(46, 168, 255, .28); color: #fff; box-shadow: 0 0 12px rgba(126, 249, 255, .35); }
+  button:active { transform: translateY(1px); }
+  .tip {
+    position: fixed; right: 20px; bottom: 26px;
+    font-size: 11px; color: #4d5670; text-align: right; line-height: 1.8;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div class="hud">
+  <h1>Pendulum · Simple Harmonic Motion</h1>
+  <div class="row"><span class="k">摆角 θ</span><span class="v" id="v-theta">45.00°</span></div>
+  <div class="row"><span class="k">角速度 ω</span><span class="v" id="v-omega">0.000 rad/s</span></div>
+  <div class="row"><span class="k">理论周期 T</span><span class="v" id="v-period">0.000 s</span></div>
+  <div class="row"><span class="k">机械能 E</span><span class="v" id="v-energy">0.00</span></div>
+  <div class="row"><span class="k">FPS</span><span class="v" id="v-fps">60</span></div>
+</div>
+
+<div class="panel">
+  <div class="ctrl">
+    <label for="s-len">摆长 L</label>
+    <input id="s-len" type="range" min="80" max="320" step="1" value="200" />
+    <output id="o-len">200 px</output>
+  </div>
+  <div class="ctrl">
+    <label for="s-grav">重力 g</label>
+    <input id="s-grav" type="range" min="1" max="20" step="0.1" value="9.8" />
+    <output id="o-grav">9.8</output>
+  </div>
+  <div class="ctrl">
+    <label for="s-ang">初始摆角</label>
+    <input id="s-ang" type="range" min="5" max="90" step="1" value="45" />
+    <output id="o-ang">45°</output>
+  </div>
+  <div class="ctrl">
+    <label for="s-damp">阻尼</label>
+    <input id="s-damp" type="range" min="0" max="0.6" step="0.01" value="0" />
+    <output id="o-damp">0.00</output>
+  </div>
+  <div class="btns">
+    <button id="btn-toggle">暂停</button>
+    <button id="btn-reset">重置</button>
+  </div>
+</div>
+
+<div class="tip">
+  θ″ = −(g / L) · sin θ　|　拖拽摆球可手动设定角度<br />
+  空格 = 暂停 / 继续　　R = 重置
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+
+  // 像素 ↔ 米 换算：使 g = 9.8 m/s² 能驱动以 px 为单位的摆长
+  const PPM = 100;                  // 1 米 = 100 像素
+  const BOB_R = 17;                 // 摆球半径
+  const FIXED_DT = 1 / 1000;        // 物理定步长（秒），保证积分稳定
+  const MAX_FRAME_DT = 0.05;        // 单帧最大补偿时间，防止切后台后爆炸
+  const TRAIL_MAX = 90;             // 拖尾采样点数
+
+  const state = {
+    L: 200,            // 摆长（px）
+    g: 9.8,            // 重力加速度（m/s²）
+    theta0: 45 * Math.PI / 180,
+    theta: 45 * Math.PI / 180,
+    omega: 0,
+    damping: 0,
+    running: true,
+    dragging: false
+  };
+
+  let W = 0, H = 0, pivotX = 0, pivotY = 0;
+  const trail = [];
+  let accumulator = 0;
+  let lastTime = 0;
+  let fps = 60;
+
+  /* ---------------- 画布尺寸与高清适配 ---------------- */
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    pivotX = W / 2;
+    pivotY = Math.max(90, H * 0.16);
+  }
+  window.addEventListener('resize', resize);
+
+  /* ---------------- 物理模型 ---------------- */
+  // 简谐（大摆角下的完整非线性）角加速度：θ″ = −(g/L)·sin θ
+  function angularAccel(theta, omega) {
+    const gPx = state.g * PPM;                    // px/s²
+    return -(gPx / state.L) * Math.sin(theta) - state.damping * omega;
+  }
+
+  // 半隐式欧拉（辛积分）：能量长期漂移小，适合摆动系统
+  function integrate(h) {
+    const a = angularAccel(state.theta, state.omega);
+    state.omega += a * h;
+    state.theta += state.omega * h;
+  }
+
+  function bobPosition() {
+    return {
+      x: pivotX + state.L * Math.sin(state.theta),
+      y: pivotY + state.L * Math.cos(state.theta)
+    };
+  }
+
+  function resetSim() {
+    state.theta = state.theta0;
+    state.omega = 0;
+    accumulator = 0;
+    trail.length = 0;
+  }
+
+  /* ---------------- 绘制 ---------------- */
+  function drawBackground() {
+    ctx.fillStyle = '#1a1a24';
+    ctx.fillRect(0, 0, W, H);
+
+    // 中心柔光，营造科技感纵深
+    const glow = ctx.createRadialGradient(pivotX, pivotY + state.L * 0.6, 0,
+                                          pivotX, pivotY + state.L * 0.6, Math.max(W, H) * 0.7);
+    glow.addColorStop(0, 'rgba(46, 168, 255, 0.10)');
+    glow.addColorStop(1, 'rgba(26, 26, 36, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    // 网格
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.032)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 40) { ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, H); }
+    for (let y = 0; y <= H; y += 40) { ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); }
+    ctx.stroke();
+  }
+
+  function drawGuides() {
+    // 平衡位置垂线
+    ctx.save();
+    ctx.setLineDash([5, 7]);
+    ctx.strokeStyle = 'rgba(126, 249, 255, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.lineTo(pivotX, pivotY + state.L + 46);
+    ctx.stroke();
+
+    // 振幅参考弧
+    ctx.strokeStyle = 'rgba(126, 249, 255, 0.10)';
+    ctx.beginPath();
+    ctx.arc(pivotX, pivotY, state.L, Math.PI / 2 - state.theta0, Math.PI / 2 + state.theta0);
+    ctx.stroke();
+    ctx.restore();
+
+    // 当前角度扇形
+    const a0 = Math.PI / 2;
+    const a1 = Math.PI / 2 - state.theta;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.arc(pivotX, pivotY, 62, Math.min(a0, a1), Math.max(a0, a1));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(126, 249, 255, 0.10)';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTrail() {
+    if (trail.length < 2) return;
+    for (let i = 1; i < trail.length; i++) {
+      const t = i / trail.length;
+      ctx.strokeStyle = 'rgba(126, 249, 255,' + (0.30 * t).toFixed(3) + ')';
+      ctx.lineWidth = 2.2 * t;
+      ctx.beginPath();
+      ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+      ctx.lineTo(trail[i].x, trail[i].y);
+      ctx.stroke();
+    }
+  }
+
+  function drawRod(bx, by) {
+    const grad = ctx.createLinearGradient(pivotX, pivotY, bx, by);
+    grad.addColorStop(0, 'rgba(160, 190, 230, 0.55)');
+    grad.addColorStop(1, 'rgba(126, 249, 255, 0.90)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  function drawPivot() {
+    ctx.save();
+    ctx.shadowColor = 'rgba(126, 249, 255, 0.7)';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = '#2b3245';
+    ctx.strokeStyle = '#7ef9ff';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(pivotX, pivotY, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 悬臂横梁
+    ctx.strokeStyle = 'rgba(126, 249, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(pivotX - 70, pivotY - 8);
+    ctx.lineTo(pivotX + 70, pivotY - 8);
+    ctx.stroke();
+  }
+
+  function drawBob(bx, by) {
+    // 外发光晕
+    const halo = ctx.createRadialGradient(bx, by, BOB_R * 0.25, bx, by, BOB_R * 3.4);
+    halo.addColorStop(0, 'rgba(126, 249, 255, 0.34)');
+    halo.addColorStop(0.45, 'rgba(46, 168, 255, 0.12)');
+    halo.addColorStop(1, 'rgba(46, 168, 255, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(bx, by, BOB_R * 3.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 球体
+    ctx.save();
+    ctx.shadowColor = '#5fd8ff';
+    ctx.shadowBlur = 26;
+    const body = ctx.createRadialGradient(bx - BOB_R * 0.35, by - BOB_R * 0.4, BOB_R * 0.15, bx, by, BOB_R);
+    body.addColorStop(0, '#ffffff');
+    body.addColorStop(0.25, '#b7f6ff');
+    body.addColorStop(0.65, '#5fd8ff');
+    body.addColorStop(1, '#1c7fd0');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(bx, by, BOB_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 高光描边
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(bx, by, BOB_R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  /* ---------------- HUD ---------------- */
+  const el = {
+    theta: document.getElementById('v-theta'),
+    omega: document.getElementById('v-omega'),
+    period: document.getElementById('v-period'),
+    energy: document.getElementById('v-energy'),
+    fps: document.getElementById('v-fps')
+  };
+
+  function updateHUD() {
+    const gPx = state.g * PPM;
+    const period = 2 * Math.PI * Math.sqrt(state.L / gPx);     // 小角度理论周期
+    const v = state.L * state.omega;
+    const energy = 0.5 * v * v + gPx * state.L * (1 - Math.cos(state.theta));
+
+    el.theta.textContent = (state.theta * 180 / Math.PI).toFixed(2) + '°';
+    el.omega.textContent = state.omega.toFixed(3) + ' rad/s';
+    el.period.textContent = period.toFixed(3) + ' s';
+    el.energy.textContent = (energy / 1000).toFixed(2) + ' k';
+    el.fps.textContent = Math.round(fps);
+  }
+
+  /* ---------------- 主循环（requestAnimationFrame 驱动） ---------------- */
+  function frame(now) {
+    if (!lastTime) lastTime = now;
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+    if (dt > MAX_FRAME_DT) dt = MAX_FRAME_DT;
+    fps += ((dt > 0 ? 1 / dt : 60) - fps) * 0.1;
+
+    if (state.running && !state.dragging) {
+      accumulator += dt;
+      let guard = 0;
+      while (accumulator >= FIXED_DT && guard++ < 400) {
+        integrate(FIXED_DT);
+        accumulator -= FIXED_DT;
+      }
+    }
+
+    const bob = bobPosition();
+
+    if (!state.dragging) {
+      trail.push({ x: bob.x, y: bob.y });
+      if (trail.length > TRAIL_MAX) trail.shift();
+    }
+
+    drawBackground();
+    drawGuides();
+    drawTrail();
+    drawRod(bob.x, bob.y);
+    drawPivot();
+    drawBob(bob.x, bob.y);
+    updateHUD();
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- 交互：拖拽摆球 ---------------- */
+  function pointerPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    const p = pointerPos(e);
+    const bob = bobPosition();
+    if (Math.hypot(p.x - bob.x, p.y - bob.y) <= BOB_R + 14) {
+      state.dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!state.dragging) return;
+    const p = pointerPos(e);
+    let th = Math.atan2(p.x - pivotX, Math.max(1e-6, p.y - pivotY));
+    const LIMIT = 150 * Math.PI / 180;
+    th = Math.max(-LIMIT, Math.min(LIMIT, th));
+    state.theta = th;
+    state.omega = 0;                 // 手动设定后由静止释放
+    trail.length = 0;
+  });
+  function endDrag() { state.dragging = false; accumulator = 0; }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  /* ---------------- 控件绑定 ---------------- */
+  const sLen = document.getElementById('s-len');
+  const sGrav = document.getElementById('s-grav');
+  const sAng = document.getElementById('s-ang');
+  const sDamp = document.getElementById('s-damp');
+  const oLen = document.getElementById('o-len');
+  const oGrav = document.getElementById('o-grav');
+  const oAng = document.getElementById('o-ang');
+  const oDamp = document.getElementById('o-damp');
+  const btnToggle = document.getElementById('btn-toggle');
+  const btnReset = document.getElementById('btn-reset');
+
+  sLen.addEventListener('input', function () {
+    state.L = parseFloat(sLen.value);
+    oLen.textContent = state.L + ' px';
+    trail.length = 0;
+  });
+  sGrav.addEventListener('input', function () {
+    state.g = parseFloat(sGrav.value);
+    oGrav.textContent = state.g.toFixed(1);
+  });
+  sAng.addEventListener('input', function () {
+    state.theta0 = parseFloat(sAng.value) * Math.PI / 180;
+    oAng.textContent = sAng.value + '°';
+    resetSim();
+  });
+  sDamp.addEventListener('input', function () {
+    state.damping = parseFloat(sDamp.value);
+    oDamp.textContent = state.damping.toFixed(2);
+  });
+  btnToggle.addEventListener('click', function () {
+    state.running = !state.running;
+    btnToggle.textContent = state.running ? '暂停' : '继续';
+    accumulator = 0;
+  });
+  btnReset.addEventListener('click', resetSim);
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); btnToggle.click(); }
+    if (e.key === 'r' || e.key === 'R') resetSim();
+  });
+
+  /* ---------------- 启动 ---------------- */
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
